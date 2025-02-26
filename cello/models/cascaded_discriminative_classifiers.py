@@ -19,28 +19,21 @@ class CascadedDiscriminativeClassifiers(object):
         ):
         """
         Args:
-            binary_classifier_type: string, the name of a binary classifier
-                to use as the base classifier.
-            binary_classifier_params: dictionary mapping the name of a
-                parameter to the value for that parameter
+            binary_classifier_type: 用作基础分类器的二分类器名称
+            binary_classifier_params: 分类器参数字典，将参数名映射到参数值
         """
-
+        # 初始化分类器参数
         self.binary_classif_algo = params['binary_classifier_algorithm']
         self.binary_classif_params = params['binary_classifier_params']
         self.assert_ambig_neg = params['assert_ambig_neg']
 
-        # Per-label model artifacts
-        self.label_to_pos_items = None
-        self.label_to_neg_items = None
-        self.label_to_classifier = None
+        # 每个标签的模型相关数据
+        self.label_to_pos_items = None  # 标签到正样本的映射
+        self.label_to_neg_items = None  # 标签到负样本的映射
+        self.label_to_classifier = None # 标签到分类器的映射
 
-        # Labels for which all samples in the training set are
-        # annotated with
+        # 训练集中所有样本都有的标签
         self.trivial_labels = None
-
-        # all samples are associated with these labels
-        self.trivial_labels = None
-
 
     def fit(
             self, 
@@ -51,36 +44,30 @@ class CascadedDiscriminativeClassifiers(object):
             item_to_group=None, 
             verbose=False,
             features=None,
-            model_dependency=None # Unused
+            model_dependency=None # 未使用
         ):
         """
         Args:
-            X: NxM matrix of features where N is the number of items and
-                M is the number of features
-            train_items: list of item identifiers, each corresponding
-                to the feature vector in X
-            item_to_labels: dictionary mapping each item identifier to
-                its set of labels in the label_graph
-            label_graph: a Graph object representing the label DAG
-            item_to_group: a dictionary mapping each item identifier
-                to the group it belongs to. These groups may correspond
-                to a shared latent variable and should be considered in
-                the training process. For example, if the training items
-                are gene expression profiles, the groups might be batches.
-            verbose: if True, output debugging messages
+            X: NxM特征矩阵，N是样本数，M是特征数
+            train_items: 项目标识符列表，每个对应X中的特征向量
+            item_to_labels: 字典，将每个项目标识符映射到label_graph中的标签集
+            label_graph: 表示标签DAG的Graph对象
+            item_to_group: 字典，将每个项目映射到其所属组
+            verbose: 是否输出调试信息
         """
+        # 保存训练数据
         self.train_items = train_items 
         self.item_to_labels = item_to_labels
         self.label_graph = label_graph
         self.features = features
 
-        # Map each item to its index in the item lost 
+        # 创建项目到索引的映射
         item_to_index = {
             x:i 
             for i,x in enumerate(self.train_items)
         }
 
-        # Map each label to its items
+        # 为每个标签创建项目集合
         self.label_to_items = defaultdict(lambda: set())
         for item in self.train_items:
             labels = self.item_to_labels[item]
@@ -91,14 +78,16 @@ class CascadedDiscriminativeClassifiers(object):
                 self.label_to_items[label] = set()
         self.label_to_items = dict(self.label_to_items)
 
-        # Compute the training sets for each label
+        # 计算每个标签的训练集
         if self.assert_ambig_neg:
+            # 使用断言模糊负样本的方法计算训练集
             label_to_pos_items, label_to_neg_items = _compute_training_sets_assert_ambiguous_negative(
                 self.label_to_items,
                 self.item_to_labels,
                 self.label_graph
             )
         else:
+            # 移除模糊样本的方法计算训练集
             label_to_pos_items, label_to_neg_items = _compute_training_sets_remove_ambiguous(
                 self.label_to_items,
                 self.item_to_labels,
@@ -107,16 +96,19 @@ class CascadedDiscriminativeClassifiers(object):
         self.label_to_pos_items = label_to_pos_items
         self.label_to_neg_items = label_to_neg_items
  
-        # Train a classifier at each node of the ontology.
+        # 在本体的每个节点上训练分类器
         self.trivial_labels = set()
         self.label_to_classifier = {}
         for label_i, curr_label in enumerate(self.label_to_items.keys()):
+            # 获取正负样本
             pos_items = self.label_to_pos_items[curr_label]
             neg_items = self.label_to_neg_items[curr_label]
             pos_y = [POS_CLASS for x in pos_items]
             neg_y = [NEG_CLASS for x in neg_items]
             train_items = pos_items + neg_items
             train_y = np.asarray(pos_y + neg_y)
+            
+            # 提取特征
             pos_X = [
                 X[
                     item_to_index[x]
@@ -131,8 +123,7 @@ class CascadedDiscriminativeClassifiers(object):
             ]
             train_X = np.asarray(pos_X + neg_X) 
 
-            # Train classifier
-            #if verbose:
+            # 训练分类器
             if True:
                 print("({}/{}) training classifier for label {}...".format(
                     label_i+1, 
@@ -141,6 +132,8 @@ class CascadedDiscriminativeClassifiers(object):
                 ))
                 print("Number of positive items: {}".format(len(pos_items)))
                 print("Number of negative items: {}".format(len(neg_items)))
+            
+            # 处理特殊情况和训练分类器
             if len(pos_items) > 0 and len(neg_items) == 0:
                 self.trivial_labels.add(curr_label)
             else:
@@ -151,9 +144,8 @@ class CascadedDiscriminativeClassifiers(object):
                 model.fit(train_X, train_y)
                 self.label_to_classifier[curr_label] = model
 
-
     def predict(self, X, test_items):
-        # Run all of the classifiers
+        # 运行所有分类器进行预测
         label_to_cond_log_probs = {}
         for label in self.label_graph.get_all_nodes():
             if label in self.label_to_classifier:
@@ -176,8 +168,7 @@ class CascadedDiscriminativeClassifiers(object):
                 else:
                     raise Exception("No positive items for label %s" % label)
 
-        # Compute the marginals for each label by multiplying all of the conditional
-        # probabilities from that label up to the root of the DAG
+        # 计算每个标签的边际概率
         label_to_marginals = {}
         for label, log_probs in label_to_cond_log_probs.items():
             products = np.zeros(len(X))
@@ -188,7 +179,7 @@ class CascadedDiscriminativeClassifiers(object):
             products = np.add(products, log_probs)
             label_to_marginals[label] = np.exp(products)
 
-        # Structure the results into DataFrames
+        # 将结果组织成DataFrame格式
         confidence_df = pd.DataFrame(
             data=label_to_marginals,
             index=test_items
@@ -202,15 +193,12 @@ class CascadedDiscriminativeClassifiers(object):
         scores_df = scores_df[sorted_labels]
         return confidence_df, scores_df
 
-
 def _compute_training_sets_assert_ambiguous_negative(
         label_to_items,
         item_to_labels,
         label_graph
     ):
-    # Compute the positive items for each label
-    # This set consists of all items labelled with a 
-    # descendent of the label
+    # 计算每个标签的正样本
     print("Computing positive labels...")
     label_to_pos_items = {}
     for curr_label in label_to_items:
@@ -221,9 +209,7 @@ def _compute_training_sets_assert_ambiguous_negative(
                 positive_items.update(label_to_items[desc_label])
         label_to_pos_items[curr_label] = list(positive_items)
 
-    # Compute the negative items for each label
-    # This set consists of all items that are labelled with the
-    # the same parents, but not with the current label
+    # 计算每个标签的负样本
     print("Computing negative labels...")
     label_to_neg_items = {}
     for curr_label in label_to_items:
@@ -236,15 +222,12 @@ def _compute_training_sets_assert_ambiguous_negative(
         label_to_neg_items[curr_label] = list(negative_items)
     return label_to_pos_items, label_to_neg_items
     
-        
 def _compute_training_sets_remove_ambiguous(
         label_to_items,
         item_to_labels,
         label_graph
     ):
-    # Compute the positive items for each label
-    # This set consists of all items labelled with a 
-    # descendent of the label
+    # 计算每个标签的正样本
     print("Computing positive labels...")
     label_to_pos_items = {}
     for curr_label in label_to_items:
@@ -255,9 +238,7 @@ def _compute_training_sets_remove_ambiguous(
                 positive_items.update(label_to_items[desc_label])
         label_to_pos_items[curr_label] = list(positive_items)
 
-    # Compute the negative items for each label
-    # This set consists of all items that are labelled with the
-    # the same parents, but not with the current label, 
+    # 计算每个标签的负样本
     print("Computing negative labels...")
     label_to_neg_items = {}
     for curr_label in label_to_items:
@@ -268,9 +249,7 @@ def _compute_training_sets_remove_ambiguous(
                 negative_items.add(item)
         negative_items -= set(label_to_pos_items[curr_label])
 
-        # Compute which items are 'ambiguous' for the current label.
-        # An item is ambiguous if the parents of the current label
-        # are all most-specific labels for the sample
+        # 计算当前标签的"模糊"样本
         ambig_items = set()
         for item in negative_items:
             item_ms_labels = label_graph.most_specific_nodes(item_to_labels[item]) 

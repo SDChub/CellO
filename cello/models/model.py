@@ -27,11 +27,10 @@ PREPROCESSORS = {
 class Model:
     def __init__(self, classifier, preprocessors=None):
         """
+        初始化模型类
         Parameters:
-            classifier: a classifier object that performs
-                supervised classification
-            preprocessors: a list of preprocessor algorithms
-                for transforming the data before fitting
+            classifier: 执行监督分类的分类器对象
+            preprocessors: 用于数据转换的预处理算法列表
         """
         if preprocessors is None:
             self.preprocessors = []
@@ -51,17 +50,13 @@ class Model:
             model_dependency=None
         ):
         """
+        训练模型
         Parameters: 
-            train_X (matrix): an NxM matrix of training data 
-                for N items and M features
-            train_items (list): a N-length list of item-
-                identifiers corresponding to the rows of
-                train_X
-            item_to_labels (dictionary): a dictionary mapping
-                each item to its set of labels
-            label_graph (DirectedAcyclicGraph): the graph of
-                labels
-            features (list): a M-length list of feature names 
+            train_X: NxM的训练数据矩阵，N个样本，M个特征
+            train_items: N个样本标识符列表
+            item_to_labels: 样本到标签的映射字典
+            label_graph: 标签有向无环图
+            features: M个特征名称列表
         """
         for prep in self.preprocessors:
             prep.fit(train_X)
@@ -80,22 +75,34 @@ class Model:
         )
 
     def _preprocess(self, X):
+        """
+        对输入数据应用预处理转换
+        """
         if self.preprocessors is not None:
             for prep in self.preprocessors:
                 X = prep.transform(X)
         return X
 
     def predict(self, X, test_items):
+        """
+        对新数据进行预测
+        """
         X = self._preprocess(X)
         return self.classifier.predict(X, test_items)
 
     def decision_function(self, X, test_items):
+        """
+        计算决策函数值
+        """
         if self.preprocessors is not None:
             for prep in self.preprocessors:
                 X = prep.transform(X)
         return self.classifier.decision_function(X, test_items)
 
     def feature_weights(self):
+        """
+        获取模型的特征权重
+        """
         label_to_weights = self.classifier.label_to_coefficients
         df = pd.DataFrame(
             data=label_to_weights,
@@ -119,19 +126,16 @@ def train_model(
         model_dependency=None
     ):
     """
+    创建并训练模型
     Parameters:
-        algorithm: the string representing the machine learning algorithm
-        params: a dictioanry storing the parameters for the algorithm
-        train_X: the training feature vectors
-        train_items: the list of item identifiers corresponding to each feature
-            vector
-        item_to_labels: a dictionary mapping each identifier to its labels
-        label_graph: a dictionary mapping each label to its neighbors in
-            the label-DAG
-        verbose: if True, output debugging messages during training and
-            predicting
-        tmp_dir: if the algorithm requires writing intermediate files
-            then the files are placed in this directory
+        classifier_name: 机器学习算法的字符串标识
+        params: 算法参数字典
+        train_X: 训练特征向量
+        train_items: 特征向量对应的样本标识符列表
+        item_to_labels: 样本到标签的映射字典
+        label_graph: 标签DAG中标签到邻居的映射字典
+        verbose: 是否输出调试信息
+        tmp_dir: 算法中间文件的存储目录
     """
     classifier = CLASSIFIERS[classifier_name](params)
     preps = None
