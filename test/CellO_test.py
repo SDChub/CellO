@@ -68,7 +68,7 @@ class TestCellO(unittest.TestCase):
             [1,2,3,4],
             [1,2,3,4]
         ])
-        genes = ['b', 'a', 'c']
+        genes = ['b', 'a', 'c'],
         gene_to_indices = {
             'a': [0, 3],
             'b': [1],

@@ -545,6 +545,9 @@ def _raw_probabilities(
         # 不使用聚类,直接预测每个细胞
         cell_to_clust = None
         conf_df, score_df = mod.predict(ad.X, ad.obs.index)
+    
+    # conf_df 包含每个聚类对应每种细胞类型的预测概率
+    # cell_to_clust 包含每个细胞对应的聚类
     return conf_df, cell_to_clust
 
 

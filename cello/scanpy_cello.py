@@ -1,148 +1,93 @@
-"""\
-Classify human cell against the Cell Ontology using CellO.
+"""
+使用CellO对人类细胞进行细胞本体分类。
 
-Here we implement a function for running CellO following the conventions
-in Scanpy's external API (https://scanpy.readthedocs.io/en/stable/external/).
+这里我们按照Scanpy外部API的约定实现CellO的运行函数
+(https://scanpy.readthedocs.io/en/stable/external/)。
 
-Author: Matthew Bernstein
-Email: mbernstein@morgridge.org
+作者: Matthew Bernstein
+邮箱: mbernstein@morgridge.org
 """
 
-from anndata import AnnData
-import dill
-from collections import defaultdict
-import pandas as pd
-import io
-from matplotlib import pyplot as plt
-import matplotlib.image as mpimg
+# 导入必要的库
+from anndata import AnnData  # 用于存储单细胞数据
+import dill  # 用于序列化Python对象
+from collections import defaultdict  # 用于处理默认字典
+import pandas as pd  # 用于数据处理
+import io  # 用于处理字节流
+from matplotlib import pyplot as plt  # 用于绘图
+import matplotlib.image as mpimg  # 用于图像处理
 
+# 导入CellO自定义模块
 from .plot_annotations import probabilities_on_graph
 from . import ontology_utils as ou
 from . import cello as ce
 
 def cello(
-        adata: AnnData, 
-        clust_key: str = 'leiden',
-        rsrc_loc: str = '.',
-        algo: str = 'IR',
-        out_prefix: str = None,
-        model_file: str = None,
-        log_dir: str = None,
-        term_ids: bool = False,
-        remove_anatomical_subterms: list = None
+        adata: AnnData,  # AnnData对象，包含基因表达数据
+        clust_key: str = 'leiden',  # 聚类结果的键名
+        rsrc_loc: str = '.',  # CellO资源文件位置
+        algo: str = 'IR',  # 分类算法选择
+        out_prefix: str = None,  # 输出文件前缀
+        model_file: str = None,  # 预训练模型文件路径
+        log_dir: str = None,  # 日志目录
+        term_ids: bool = False,  # 是否使用术语ID
+        remove_anatomical_subterms: list = None  # 需要过滤的解剖学术语
     ):
-    """\
-    CellO [Bernstein21]_.
+    """
+    CellO [Bernstein21]_
     
-    Hierarchical cell type classification of human cells with the Cell Ontology.
+    使用细胞本体对人类细胞进行层次分类。
     
-    For more information, tutorials, and bug reports, visit the `CellO
-    GitHub page <https://github.com/deweylab/CellO>`__. 
+    更多信息、教程和错误报告，请访问CellO的GitHub页面：
+    https://github.com/deweylab/CellO
     
-    Parameters
+    参数说明：
     ----------
-    adata
-        Annotated data matrix. CellO requires that expression data has
-        been normalized using log(TPM+1). For droplet-based assays, this
-        is equivalent to log(CPM+1).
-    clust_key
-        Key-name of the cluster annotations in `adata.obs`.
-    rsrc_loc
-        The path to the CellO resources file. The CellO resources
-        contain pre-trained models, gene symbol mappings, and 
-        training sets for constructing CellO classifiers. If the 
-        CellO resources are not located at this provided location,
-        they will be downloaded automatically. The resources require
-        approximately 5GB of disk space.
-    algo
-        The name of the algorithm to use for hierarchical classification
-        against the Cell Ontology. Use `IR` for Isotonic Regression and 
-        `CLR` for Cascaded Logistic Regression.
-    out_prefix
-        The output prefix of the trained model. If the pre-trained models
-        are not compatible with the input dataset do to model expecting
-        different genes than that included in the input data, then a new
-        model will be trained using CellO's training set. The output model
-        will be written to `<output_pref>.model.dill`.  If `None` the 
-        newly trained model will not be saved to disk.
-    model_file
-        The path to the a trained CellO classifier to use for classification.
-        CellO model files end in the suffix `model.dill`.
-    log_dir
-        Directory in which to write log files. If `None`, no log files will
-        be written.
-    term_ids
-        If `True`, output will use Cell Ontology term ID's. 
-        If `False`, output will use human readable cell type names.
-    remove_anatomical_subterms   
-        A list of Uberon Ontology term ID's used to filter CellO's output
-        according to anatomical entities. For example, to blacklist all
-        cell type specific only to lung and liver, one would supply the 
-        list `['UBERON:0002048', 'UBERON:0002107']`.
-    
-    Returns
-    -------
-    Updates `adata.obs` with CellO's output. Specifically, `adata.obs` will
-    have two columns for every cell type. A column `<cell_type> (probability)`
-    that stores the probability that each cell is of `<cell_type>` and a column
-    `<cell_type> (binary)` that stores a 1 if the cell is predicted to be of 
-    `<cell_type>` and 0 otherwise.  `adata.obs` will also have a column called
-    `Most specific cell type` with the term ID or name (depending on whether
-    `term_ids` is set to True or False respectively) of the most-specific cell
-    type classification for each cell.
-        
-    
-    Examples
-    --------
-    >>> from anndata import AnnData
-    >>> import scanpy as sc
-    >>> import scanpy.external as sce
-    >>> adata = sc.datasets.pbmc3k()
-    >>> adata.X = adata.X.todense()
-    >>> sc.pp.normalize_total(adata, target_sum=1e6)
-    >>> sc.pp.log1p(adata)
-    >>> sc.pp.pca(adata)
-    >>> sc.pp.neighbors(adata)
-    >>> sc.tl.leiden(adata, resolution=2.0) # Perform clustering
-    >>> adata.var['gene_symbols'] = adata.var.index 
-    >>> adata.var = adata.var.set_index('gene_ids') # Set the Ensembl gene ID's as primary gene identifiers
-    >>> sce.tl.cello(adata, 'leiden', '.') # Run CellO
-    >>> sc.tl.umap(adata)
-    >>> sc.pl.umap(adata, color='Most specific cell type') # Create UMAP plot with cells colored by cell type
+    adata: 注释数据矩阵，要求表达数据已经用log(TPM+1)标准化
+    clust_key: 聚类注释在adata.obs中的键名
+    rsrc_loc: CellO资源文件路径
+    algo: 层次分类算法，'IR'表示保序回归，'CLR'表示级联逻辑回归
+    out_prefix: 训练模型的输出前缀
+    model_file: 预训练模型文件路径
+    log_dir: 日志目录
+    term_ids: 是否使用本体术语ID
+    remove_anatomical_subterms: 需要过滤的解剖学术语列表
     """
     
+    # 尝试导入cello包
     try:
         import cello as ce
     except ImportError:
         raise ImportError(
-            'You need to install the package `cello`: please run `pip install '
-            '--user cello` in a terminal.'
+            '需要安装cello包：请在终端运行 `pip install --user cello`'
         )
     
-    # Load the model
+    # 加载模型
     if model_file:
-        print('Loading model from {}...'.format(model_file))
+        print('从{}加载模型...'.format(model_file))
         with open(model_file, 'rb') as f:
             mod=dill.load(f)
     else:
-        # Load or train a model
+        # 加载或训练模型
         mod = ce._retrieve_pretrained_model(adata, algo, rsrc_loc)
         if mod is None:
+            # 如果没有预训练模型，则训练新模型
             mod = ce.train_model(
                 adata, 
                 rsrc_loc, 
                 algo=algo, 
                 log_dir=log_dir
             )
+            # 保存训练好的模型
             if out_prefix:
                 out_model_f = '{}.model.dill'.format(out_prefix)
-                print('Writing trained model to {}'.format(out_model_f))
+                print('将训练好的模型写入{}'.format(out_model_f))
                 with open(out_model_f, 'wb') as f:
                     dill.dump(mod, f)
             else:
-                print("No argument to 'out_prefix' was provided. Trained model will not be saved.")
+                print("未提供'out_prefix'参数。训练好的模型不会被保存。")
     
-    # Run classification
+    # 运行分类
     results_df, finalized_binary_results_df, ms_results_df = ce.predict(
         adata,
         mod,
@@ -153,8 +98,9 @@ def cello(
         remove_anatomical_subterms=remove_anatomical_subterms
     )
         
-    # Merge results into AnnData object
+    # 将结果合并到AnnData对象中
     if term_ids:
+        # 使用术语ID作为列名
         column_to_term_id = {
             '{} (probability)'.format(c): c
             for c in results_df.columns
@@ -168,6 +114,7 @@ def cello(
             for c in finalized_binary_results_df.columns
         ]
     else:
+        # 使用术语名称作为列名
         column_to_term_id = {
             '{} (probability)'.format(ou.cell_ontology().id_to_term[c].name): c
             for c in results_df.columns
@@ -189,6 +136,7 @@ def cello(
             for c in ms_results_df['most_specific_cell_type']
         ]
 
+    # 删除已存在的相关列
     drop_cols = [
         col
         for col in adata.obs.columns
@@ -198,8 +146,10 @@ def cello(
     ]
     adata.obs = adata.obs.drop(drop_cols, axis=1)
 
+    # 将二值结果转换为分类变量
     finalized_binary_results_df = finalized_binary_results_df.astype(bool).astype(str).astype('category')
 
+    # 将结果添加到adata对象中
     adata.obs = adata.obs.join(results_df).join(finalized_binary_results_df)
     adata.uns['CellO_column_mappings'] = column_to_term_id
     if term_ids:
@@ -219,56 +169,65 @@ def normalize_and_cluster(
         cluster_res: float = 2.0
     ):
     """
-    Normalize and cluster an expression matrix in units of raw UMI counts.
-
-    Parameters
-    ----------
-    adata
-        Annotated data matrix. Expected units are raw UMI counts.
-    n_pca_components (default 50)
-        Number of principal components to use when running PCA. PCA is
-        is used to reduce noise and speed up computation when clustering.
-    n_neighbors (default 15)
-        Number of neighbors to use for computing the nearest-neighbors 
-        graph. Clustering is performed using community detection on this
-        nearest-neighbors graph.
-    n_top_genes (default 10000)
-        Number of genes selected for computing the nearest-neighbors graph
-        and for clustering.
-    cluster_res (default 2.0)
-        Cluster resolution for the Leiden community detection algorithm.
-        A higher resolution produces more fine-grained, smaller clusters.
+    对原始UMI计数矩阵进行标准化和聚类
+    
+    参数说明：
+    adata: 包含原始UMI计数的AnnData对象
+    n_pca_components: PCA降维的组分数
+    n_neighbors: 计算最近邻图的邻居数
+    n_top_genes: 用于聚类的高变基因数量
+    cluster_res: Leiden聚类的分辨率参数
     """
+    
+    # 检查是否安装了scanpy
     try:
         import scanpy as sc
     except ImportError:
-        sys.exit("The function 'normalize_and_cluster' requires that scanpy package be installed. To install scanpy, run 'pip install scanpy'")
-    sc.pp.normalize_total(adata, target_sum=1e6)
-    sc.pp.log1p(adata)
-    sc.pp.highly_variable_genes(adata, n_top_genes=n_top_genes)
-    sc.pp.pca(adata, n_comps=n_pca_components, use_highly_variable=True)
-    sc.pp.neighbors(adata, n_neighbors=n_neighbors)
-    sc.tl.leiden(adata, resolution=cluster_res)
+        sys.exit("'normalize_and_cluster'函数需要安装scanpy包。请运行'pip install scanpy'进行安装")
+    
+    # 数据预处理和聚类
+    sc.pp.normalize_total(adata, target_sum=1e6)  # CPM标准化
+    sc.pp.log1p(adata)  # 对数转换
+    sc.pp.highly_variable_genes(adata, n_top_genes=n_top_genes)  # 选择高变基因
+    sc.pp.pca(adata, n_comps=n_pca_components, use_highly_variable=True)  # PCA降维
+    sc.pp.neighbors(adata, n_neighbors=n_neighbors)  # 构建KNN图
+    sc.tl.leiden(adata, resolution=cluster_res)  # Leiden聚类
 
 
 def cello_probs(adata, cell_or_clust, rsrc_loc, p_thresh, width=10, height=10, clust_key=None, dpi=300, return_graph=False):
+    """
+    可视化CellO的预测概率
+    
+    参数说明：
+    adata: AnnData对象
+    cell_or_clust: 要可视化的细胞或聚类ID
+    rsrc_loc: 资源文件位置
+    p_thresh: 概率阈值
+    width, height: 图形尺寸
+    clust_key: 聚类键名
+    dpi: 图像分辨率
+    return_graph: 是否返回图形对象
+    """
+    
+    # 提取预测结果
     results_df = adata.obs[[col for col in adata.uns['CellO_column_mappings']]]
     results_df.columns = [
         adata.uns['CellO_column_mappings'][c] for c in results_df.columns
     ]
 
-    # Plot based on cluster ID 
+    # 基于聚类ID进行绘图
     if clust_key:
         try:
             assert cell_or_clust in set(adata.obs[clust_key])
         except AssertionError:
-            raise KeyError(f"Error plotting probabilities on graph. Cluster {clust_key} not found in `adata.obs` columns.")
+            raise KeyError(f"绘图错误。在`adata.obs`列中未找到聚类{clust_key}。")
 
-        # Take subset of results dataframe for each column
+        # 为每个聚类提取结果
         clust_to_indices = defaultdict(lambda: [])
         for index, clust in zip(adata.obs.index, adata.obs[clust_key]):
             clust_to_indices[clust].append(index)
 
+        # 构建聚类结果DataFrame
         clusts = sorted(clust_to_indices.keys())
         results_df = pd.DataFrame(
             [
@@ -279,6 +238,7 @@ def cello_probs(adata, cell_or_clust, rsrc_loc, p_thresh, width=10, height=10, c
             columns=results_df.columns
         )
 
+    # 生成概率图
     g = probabilities_on_graph(
         cell_or_clust,
         results_df,
@@ -286,8 +246,10 @@ def cello_probs(adata, cell_or_clust, rsrc_loc, p_thresh, width=10, height=10, c
         p_thresh=p_thresh
     )
 
+    # 将图形转换为图像
     f = io.BytesIO(g.draw(format='png', prog='dot', args=f'-Gdpi={dpi}'))
 
+    # 创建matplotlib图形
     fig, ax = plt.subplots(figsize=(width, height))
     im = mpimg.imread(f)
     plt.xticks([])
@@ -295,6 +257,7 @@ def cello_probs(adata, cell_or_clust, rsrc_loc, p_thresh, width=10, height=10, c
     plt.imshow(im)
     plt.show()
 
+    # 返回结果
     if return_graph:
         return fig, ax, g
     else:
@@ -303,8 +266,13 @@ def cello_probs(adata, cell_or_clust, rsrc_loc, p_thresh, width=10, height=10, c
 
 def write_to_tsv(adata, filename):
     """
-    Write CellO's output to a TSV file.
+    将CellO的输出写入TSV文件
+    
+    参数：
+    adata: AnnData对象
+    filename: 输出文件名
     """
+    # 选择要保存的列
     keep_cols = [
         col 
         for col in adata.obs.columns
@@ -312,5 +280,6 @@ def write_to_tsv(adata, filename):
         or '(binary)' in col
         or 'Most specific cell type' in col
     ]
+    # 提取数据并保存
     df = adata.obs[keep_cols]
     df.to_csv(filename, sep='\t')

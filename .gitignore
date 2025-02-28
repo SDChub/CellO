@@ -1,2 +1,10 @@
 /resources
 /resources.zip
+
+.vscode/
+
+build/
+
+cello_classify.egg-info/
+
+tutorial/GSM3516673_MSK_LX682_NORMAL_dense.csv.gz
