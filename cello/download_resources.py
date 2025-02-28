@@ -9,7 +9,7 @@ Authors: Matthew Bernstein <mbernstein@morgridge.org>
 import subprocess
 from os.path import join
 from shutil import which
-
+import sys
 def download(dest):
     if which('curl') is None:
         sys.exit(
@@ -30,3 +30,5 @@ def download(dest):
         print('Running command: {}'.format(cmd))
         subprocess.run(cmd, shell=True)
 
+if __name__ == '__main__':
+    download('./')

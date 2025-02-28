@@ -1,0 +1,27 @@
+{
+    'id': 'CL:0000081', 
+    'name': 'blood cell',
+    'definition': '"A cell found predominately in the blood." [GOC:add, GOC:tfm]', 
+    'synonyms': set(), 
+    'relationships': {
+        'is_a': ['CL:0000988'], 
+        'capable_of': ['GO:0008015'], 
+        'inv_is_a': ['CL:0000094','CL:0000232', 'CL:0000233',
+                     'CL:0000390', 'CL:0002318', 'CL:2000001', 
+                     'CL:0002246','CL:2000001','CL:0002246']
+    }, 
+    'subsets': set()
+}
+{
+    'id': 'CL:2000001',
+    'name': 'peripheral blood mononuclear cell',
+    'definition': '"A leukocyte with a single non-segmented nucleus in the mature form found in the circulatory pool of blood." [GOC:TermGenie]',
+    'synonyms': set(),
+    'relationships': 
+    {
+        'is_a': ['CL:0000080', 'CL:0000842', 'CL:0000081', 'CL:0000081'],
+        'part_of': ['UBERON:0000178']
+    },
+    'subsets': set()
+}
+{'id': 'CL:0000542', 'name': 'lymphocyte', 'definition': '"A lymphocyte is a leukocyte commonly found in the blood and lymph that has the characteristics of a large nucleus, a neutral staining cytoplasm, and prominent heterochromatin." [GOC:add, ISBN:0683073696, ISBN:0781735149]', 'synonyms': set(), 'relationships': {'is_a': ['CL:0002087', 'CL:0002242', 'CL:0000842', 'CL:0000842'], 'develops_from': ['CL:0000051'], 'has_part': ['CP:0000000', 'CP:0000037', 'GO:0000792'], 'lacks_part': ['GO:0030141'], 'inv_is_a': ['CL:0000084', 'CL:0000945', 'CL:0002679', 'CL:0001065']}, 'subsets': set()}
