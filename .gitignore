@@ -8,3 +8,19 @@ build/
 cello_classify.egg-info/
 
 tutorial/GSM3516673_MSK_LX682_NORMAL_dense.csv.gz
+
+tutorial/resources_v2.0.0.tar.gz
+
+cello/__pycache__/
+
+cello/models/__pycache__/
+
+cello/graph_lib/__pycache__/
+
+resources.tar
+
+resources.tar.gz
+
+genes_found_in_training_set.tsv
+
+genes_absent_from_training_set.tsv

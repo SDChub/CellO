@@ -14,48 +14,51 @@ import pandas as pd
 # 导入自定义模块
 from . import model
 from .pca import PCA
-from .ensemble_binary_classifiers import EnsembleOfBinaryClassifiers 
+from .ensemble_binary_classifiers import EnsembleOfBinaryClassifiers
+
 
 # 保序回归分类器类定义
-class IsotonicRegression():
-    def __init__(
-            self,
-            params,
-            trained_classifiers_f=None 
-        ):
+class IsotonicRegression:
+    def __init__(self, params, trained_classifiers_f=None):
         # 初始化参数
         self.params = params
-       
+
     # 模型训练方法
     def fit(
-            self,
-            X,
-            train_items,
-            item_to_labels,
-            label_graph,
-            item_to_group=None,
-            verbose=False,
-            features=None,
-            model_dependency=None
-        ):
+        self,
+        X,
+        train_items,
+        item_to_labels,
+        label_graph,
+        item_to_group=None,
+        verbose=False,
+        features=None,
+        model_dependency=None,
+    ):
         """
-        model_dependency: 预训练的二分类器集成的路径（dill格式）
+        self.classifier.fit(
+            train_X,            # 表达量矩阵
+            train_items,        # experiment(cell) 索引 
+            item_to_labels,     # exp_to_labels 实验样本ID列表, 就是数据集列表, 一条一条给模型
+            label_graph,        # 细胞类型的层级关系图
+            item_to_group=item_to_group,  # 实验样本到研究批次的分组信息
+            verbose=verbose,    # 是否打印训练信息
+            features=features,  # 调用者提供的训练的基因列表
+            model_dependency=model_dependency,  # 模型依赖性信息
+        )
         """
 
-        # 保存特征信息
+        # 保存调用者提供的训练的基因列表
         self.features = features
 
         # 处理预训练模型或从头训练
         if model_dependency is not None:
             # 加载预训练的模型
-            with open(model_dependency, 'rb') as f:
+            with open(model_dependency, "rb") as f:
                 self.ensemble = dill.load(f)
             # 验证预训练模型的兼容性
             assert _validate_pretrained_model(
-                self.ensemble, 
-                train_items, 
-                label_graph,
-                features
+                self.ensemble, train_items, label_graph, features
             )
             # 从预训练模型中获取特征和训练数据信息
             self.features = self.ensemble.classifier.features
@@ -63,15 +66,27 @@ class IsotonicRegression():
             self.label_graph = self.ensemble.classifier.label_graph
         else:
             # 创建新的二分类器集成并训练
-            self.ensemble = EnsembleOfBinaryClassifiers(self.params) 
+            # params如下: 
+            #    "IR": {  # 保序回归算法参数
+            #         "assert_ambig_neg": False,
+            #         "binary_classifier_algorithm": "logistic_regression",
+            #         "binary_classifier_params": {
+            #             "penalty": "l2",
+            #             "penalty_weight": 0.0006,
+            #             "solver": "liblinear",
+            #             "intercept_scaling": 1000.0,
+            #             "downweight_by_class": True,
+            #         }
+            #     }
+            self.ensemble = EnsembleOfBinaryClassifiers(self.params)
             self.ensemble.fit(
-                X,
-                train_items,
-                item_to_labels,
-                label_graph,
-                item_to_group=item_to_group,
-                verbose=verbose,
-                features=features
+                X,  # cello 作者提供的表达量矩阵,其中过滤出了调用者提供的数据中的基因id
+                train_items,        # experiment(cell) 索引 
+                item_to_labels,     # exp_to_labels 实验样本ID列表, 就是数据集列表, 一条一条给模型
+                label_graph,        # 细胞类型的层级关系图
+                item_to_group=item_to_group,  # 实验样本到研究批次的分组信息
+                verbose=verbose,    # 是否打印训练信息
+                features=features,  # 调用者提供的训练的基因列表
             )
             # 保存训练数据信息
             self.features = features
@@ -82,7 +97,7 @@ class IsotonicRegression():
     def predict(self, X, test_items):
         # 获取基础分类器的预测结果
         confidence_df, scores_df = self.ensemble.predict(X, test_items)
-        labels_order = confidence_df.columns        
+        labels_order = confidence_df.columns
 
         # 创建约束矩阵：确保预测结果满足层次关系
         constraints_matrix = []
@@ -106,25 +121,17 @@ class IsotonicRegression():
             # 设置二次规划问题的参数
             Q = np.eye(len(labels_order), len(labels_order))
             predictions = np.array(
-                confidence_df[labels_order].iloc[q_i],
-                dtype=np.double
+                confidence_df[labels_order].iloc[q_i], dtype=np.double
             )
-            print("Running solver on item {}/{}...".format(q_i+1, len(X)))
+            print("Running solver on item {}/{}...".format(q_i + 1, len(X)))
             # 求解二次规划问题
             xf, f, xu, iters, lagr, iact = solve_qp(
-                Q, 
-                predictions, 
-                constraints_matrix, 
-                b
+                Q, predictions, constraints_matrix, b
             )
             pred_da.append(xf)
 
         # 将结果整理为DataFrame格式
-        pred_df = pd.DataFrame(
-            data=pred_da,
-            columns=labels_order,
-            index=test_items
-        )
+        pred_df = pd.DataFrame(data=pred_da, columns=labels_order, index=test_items)
         return pred_df, confidence_df
 
     # 获取分类器系数的属性方法
@@ -149,11 +156,12 @@ class IsotonicRegression():
                     for label, coefs in label_to_coefs.items()
                 }
         else:
-            raise Exception('This has not been implemented yet!')
+            raise Exception("This has not been implemented yet!")
         return {
             label: classif.coef_
             for label, classif in self.ensemble.classifier.label_to_classifier.items()
         }
+
 
 # 验证预训练模型的辅助函数
 def _validate_pretrained_model(ensemble, train_items, label_graph, features):
@@ -162,16 +170,14 @@ def _validate_pretrained_model(ensemble, train_items, label_graph, features):
     curr_labels = frozenset(label_graph.get_all_nodes())
     if classif_labels != curr_labels:
         return False
-    
+
     # 检查训练项是否相同
     classif_train_items = frozenset(ensemble.classifier.train_items)
     curr_train_items = frozenset(train_items)
     if classif_train_items != curr_train_items:
         return False
-    
+
     # 检查特征是否相同
     if tuple(ensemble.classifier.features) != tuple(features):
         return False
     return True
-
-
